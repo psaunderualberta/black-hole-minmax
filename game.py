@@ -1,15 +1,15 @@
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import chex
+from jaxtyping import Array
 
 
 class BlackHole(eqx.Module):
-    board: chex.Array
+    board: Array
     player_1_turn: bool
     count: int
 
-    def __init__(self, board: chex.Array, player_1_turn: bool = True, count: int = 1):
+    def __init__(self, board: Array, player_1_turn: bool = True, count: int = 1):
         self.board = board
         self.count = count
         self.player_1_turn = player_1_turn
@@ -30,12 +30,12 @@ class BlackHole(eqx.Module):
         return self.board[x][y]
 
     def is_valid_idx(self, x, y):
-        valid_x = jnp.logical_and(0 <= x, x <= self.board.shape[0])
-        valid_y = jnp.logical_and(0 <= y, y <= self.board.shape[0])
-        return jnp.logical_and(x >= y, jnp.logical_and(valid_x, valid_y))
+        valid_x = (0 <= x) & (x <= self.board.shape[0])
+        valid_y = (0 <= y) & (y <= self.board.shape[0])
+        return (x >= y) & (valid_x) & (valid_y)
 
     def is_valid_move(self, x, y):
-        return jnp.logical_and(self.is_valid_idx(x, y), self.board[x][y] == 0)
+        return (self.is_valid_idx(x, y)) & (self.board[x][y] == 0)
 
     def idxs(self):
         rows, cols = jnp.indices(self.board.shape)
@@ -44,14 +44,14 @@ class BlackHole(eqx.Module):
     def play_move(self, move: tuple[int, int]) -> "BlackHole":
         x, y = move[0], move[1]
 
-        board = self.board.at[x, y].set(self.count * (2 * self.player_1_turn - 1))
+        board = self.board.at[x, y].set(self.count)
         new_player_1_turn = jnp.logical_not(self.player_1_turn)
         new_count = self.count + new_player_1_turn.astype(jnp.int32)
         new_game = BlackHole(board, new_player_1_turn, new_count)
 
         return new_game
 
-    def get_valid_moves(self) -> chex.Array:
+    def get_valid_moves(self) -> Array:
         return jnp.argwhere(self.board == 0, size=7 * 7, fill_value=-1)
 
     def is_done(self) -> bool:
