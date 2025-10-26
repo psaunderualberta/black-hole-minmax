@@ -1,17 +1,24 @@
-import equinox as eqx
-import jax
-import jax.numpy as jnp
-from jaxtyping import Array
+import numpy as np
+from numba import int32, boolean
+from numba.experimental import jitclass
 
 
-class BlackHole(eqx.Module):
-    board: Array
+spec = [
+    ("board", int32[:, :]),
+    ("player_1_turn", boolean),
+    ("score", int32),
+]
+
+
+@jitclass(spec)
+class BlackHole(object):
+    board: np.ndarray
     player_1_turn: bool
-    count: int
+    score: int
 
-    def __init__(self, board: Array, player_1_turn: bool = True, count: int = 1):
+    def __init__(self, board: np.ndarray, player_1_turn: bool = True, score: int = 1):
         self.board = board
-        self.count = count
+        self.score = score
         self.player_1_turn = player_1_turn
 
     def print_board(self):
@@ -30,36 +37,47 @@ class BlackHole(eqx.Module):
         return self.board[x][y]
 
     def is_valid_idx(self, x, y):
-        valid_x = (0 <= x) & (x <= self.board.shape[0])
-        valid_y = (0 <= y) & (y <= self.board.shape[0])
+        x = int(x)
+        y = int(y)
+        valid_x = (0 <= x) & (x < self.board.shape[0])
+        valid_y = (0 <= y) & (y < self.board.shape[0])
         return (x >= y) & (valid_x) & (valid_y)
 
     def is_valid_move(self, x, y):
+        x = int(x)
+        y = int(y)
         return (self.is_valid_idx(x, y)) & (self.board[x][y] == 0)
 
     def idxs(self):
-        rows, cols = jnp.indices(self.board.shape)
-        return jnp.vstack([rows.ravel(), cols.ravel()]).T
+        rows, cols = np.indices(self.board.shape)
+        idxs = np.zeros((2, self.board.shape[0] * self.board.shape[1]))
+        idxs[0, :] = rows.ravel()
+        idxs[1, :] = cols.ravel()
+        return idxs.T
 
     def play_move(self, move: tuple[int, int]) -> "BlackHole":
         x, y = move[0], move[1]
+        x = int(x)
+        y = int(y)
 
-        board = self.board.at[x, y].set(self.count)
-        new_player_1_turn = jnp.logical_not(self.player_1_turn)
-        new_count = self.count + new_player_1_turn.astype(jnp.int32)
-        new_game = BlackHole(board, new_player_1_turn, new_count)
+        board = np.copy(self.board)
+        board[x][y] = self.score if self.player_1_turn else -self.score
+        new_player_1_turn = not self.player_1_turn
+        new_score = self.score + int(new_player_1_turn)
+        new_game = BlackHole(board, new_player_1_turn, new_score)
 
         return new_game
 
-    def get_valid_moves(self) -> Array:
-        return jnp.argwhere(self.board == 0, size=7 * 7, fill_value=-1)
+    def get_valid_moves(self) -> np.ndarray:
+        rows, cols = np.indices(self.board.shape)
+        return np.argwhere((self.board == 0) & (cols <= rows))
 
     def is_done(self) -> bool:
-        playing_area = jnp.tril(self.board)
+        playing_area = np.tril(self.board) + np.triu(self.board + 1, k=1)
         return (playing_area == 0).sum() == 1
 
     def get_score(self, player_1):
-        directions = jnp.asarray(
+        directions = np.array(
             [
                 [-1, -1],
                 [-1, 0],
@@ -71,22 +89,17 @@ class BlackHole(eqx.Module):
         )
 
         # assume game is done
-        nonzero_entry = jnp.argwhere(self.board == 0, size=1)
+        if not self.is_done():
+            return 0
+        rows, cols = np.indices(self.board.shape)
+        nonzero_entry = np.argwhere((self.board == 0) & (cols <= rows))
         nz_x, nz_y = nonzero_entry[0][0], nonzero_entry[0][1]
 
-        def add_score(carry, direction):
+        score = 0
+        for direction in directions:
             x, y = nz_x + direction[0], nz_y + direction[1]
-            p1_score, p2_score = carry[0], carry[1]
 
-            value = jax.lax.cond(
-                self.is_valid_idx(x, y), lambda _, __: 0, self.get_pos, x, y
-            )
+            if self.is_valid_idx(x, y):
+                score += self.get_pos(x, y)
 
-            p1_score += jax.lax.select(value > 0, value, 0)
-            p2_score += jax.lax.select(value < 0, -value, 0)
-
-            return (p1_score, p2_score), None
-
-        (p1_count, p2_count), _ = jax.lax.scan(add_score, (0, 0), xs=directions)
-
-        return jax.lax.select(player_1, p1_count - p2_count, p2_count - p1_count)
+        return score if player_1 else -score
