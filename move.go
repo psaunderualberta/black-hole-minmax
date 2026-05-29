@@ -1,10 +1,10 @@
-package main;
+package main
 
 type Move struct {
-	row int
-	col int
+	Row int
+	Col int
 }
 
 func NewMove(row, col int) Move {
-	return Move{row, col};
+	return Move{row, col}
 }
