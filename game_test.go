@@ -98,3 +98,36 @@ func TestCellIsSetToCountValue(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyCellAtMoveChanges(t *testing.T) {
+	moves := []Move{Move{0, 0}, Move{1, 0}}
+	for _, move := range moves {
+		for _, starting_count := range []int{1, 2, 3} {
+			game := Game{
+				[][]int{{0}, {0, 0}},
+				false,
+				starting_count,
+			}
+			game_copy := Game{
+				[][]int{{0}, {0, 0}},
+				false,
+				starting_count,
+			}
+
+			game.ApplyMove(move)
+			changes := 0
+			for i, row := range game.Board {
+				for j, cell := range row {
+					if game_copy.Board[i][j] != cell {
+						changes++
+					}
+				}
+			}
+
+			if changes != 1 {
+				t.Errorf("move %v, starting_count %v: expected 1 change, found %d", move, starting_count, changes)
+				t.Errorf("Found board %v and original %v", game.Board, game_copy.Board)
+			}
+		}
+	}
+}
